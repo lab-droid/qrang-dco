@@ -19,7 +19,11 @@ const SYSTEM_INSTRUCTION = `
 `;
 
 // Helper to get AI instance
-const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
+const getAI = () => {
+  const customKey = typeof window !== 'undefined' ? localStorage.getItem('GEMINI_CUSTOM_API_KEY') : null;
+  const apiKey = customKey || process.env.GEMINI_API_KEY || process.env.API_KEY || '';
+  return new GoogleGenAI({ apiKey });
+};
 
 // New function for Deep Research
 export const runDeepResearch = async (productName: string): Promise<{ features: string; usp: string; marketing: MarketingDetails }> => {

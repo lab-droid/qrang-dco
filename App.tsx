@@ -35,6 +35,9 @@ const App: React.FC = () => {
   const [isGeneratingHero, setIsGeneratingHero] = useState(false);
   const [apiKeyStatus, setApiKeyStatus] = useState<'applied' | 'missing'>('missing');
   const [showHowToUse, setShowHowToUse] = useState(false);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [customApiKey, setCustomApiKey] = useState('');
+  const [apiKeyMessage, setApiKeyMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   
   // Image Upload State
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
@@ -54,11 +57,20 @@ const App: React.FC = () => {
   // Check API Key Status
   useEffect(() => {
     const checkKey = async () => {
+      // 1. Check AI Studio (Native Selector)
       const aistudio = (window as any).aistudio;
+      let hasAIStudioKey = false;
       if (aistudio) {
-        const hasKey = await aistudio.hasSelectedApiKey();
-        setApiKeyStatus(hasKey ? 'applied' : 'missing');
+        hasAIStudioKey = await aistudio.hasSelectedApiKey();
       }
+
+      // 2. Check Local Storage (Manual Input for Web Deployment)
+      const hasCustomKey = !!localStorage.getItem('GEMINI_CUSTOM_API_KEY');
+
+      // 3. Check Env (for local dev or server-side)
+      const hasEnvKey = !!process.env.GEMINI_API_KEY || !!process.env.API_KEY;
+
+      setApiKeyStatus((hasAIStudioKey || hasCustomKey || hasEnvKey) ? 'applied' : 'missing');
     };
     checkKey();
     const interval = setInterval(checkKey, 2000);
@@ -186,10 +198,36 @@ const App: React.FC = () => {
             await aistudio.openSelectKey();
           } catch (e) {
             console.error(e);
+            setShowApiKeyModal(true);
           }
       } else {
-          alert("이 기능은 Google AI Studio 환경에서만 지원됩니다.");
+          setShowApiKeyModal(true);
       }
+  };
+
+  const saveCustomApiKey = () => {
+    if (customApiKey.trim()) {
+      localStorage.setItem('GEMINI_CUSTOM_API_KEY', customApiKey.trim());
+      setApiKeyMessage({ type: 'success', text: 'API Key가 성공적으로 저장되었습니다.' });
+      setTimeout(() => {
+        setShowApiKeyModal(false);
+        setApiKeyMessage(null);
+        setCustomApiKey('');
+      }, 1500);
+    } else {
+      setApiKeyMessage({ type: 'error', text: '유효한 API Key를 입력해주세요.' });
+      setTimeout(() => setApiKeyMessage(null), 3000);
+    }
+  };
+
+  const clearCustomApiKey = () => {
+    localStorage.removeItem('GEMINI_CUSTOM_API_KEY');
+    setApiKeyMessage({ type: 'success', text: '저장된 API Key가 삭제되었습니다.' });
+    setApiKeyStatus('missing');
+    setTimeout(() => {
+      setShowApiKeyModal(false);
+      setApiKeyMessage(null);
+    }, 1500);
   };
 
   const handleHome = () => {
@@ -423,9 +461,39 @@ const App: React.FC = () => {
                 </div>
               </div>
 
+              {/* API Key Input Section (Visible if missing) */}
+              {apiKeyStatus === 'missing' && (
+                <div className="p-6 bg-rose-500/5 border border-rose-500/20 rounded-2xl space-y-4 animate-pulse">
+                  <div className="flex items-center gap-3 text-rose-400">
+                    <AlertCircle className="w-5 h-5" />
+                    <span className="text-sm font-bold">API Key가 필요합니다</span>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    웹 배포 환경에서 AI 기능을 사용하려면 Google Gemini API Key를 입력해야 합니다. 
+                    입력된 키는 브라우저에만 안전하게 저장됩니다.
+                  </p>
+                  <div className="flex gap-2">
+                    <input 
+                      type="password"
+                      value={customApiKey}
+                      onChange={(e) => setCustomApiKey(e.target.value)}
+                      className="flex-1 bg-slate-950 border border-slate-700 rounded-xl py-2.5 px-4 text-sm text-white focus:ring-1 focus:ring-rose-500 outline-none transition-all"
+                      placeholder="API Key를 입력하세요 (AIZA...)"
+                    />
+                    <button 
+                      onClick={saveCustomApiKey}
+                      className="px-6 py-2.5 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl transition-all text-sm whitespace-nowrap"
+                    >
+                      적용하기
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <button 
                 onClick={handleStart}
-                className="w-full group relative bg-gradient-to-r from-curang-primary to-cyan-600 hover:to-cyan-500 text-white font-bold py-4 rounded-xl shadow-[0_0_20px_rgba(14,165,233,0.3)] hover:shadow-[0_0_30px_rgba(14,165,233,0.5)] transition-all transform hover:-translate-y-1"
+                disabled={apiKeyStatus === 'missing'}
+                className={`w-full group relative bg-gradient-to-r from-curang-primary to-cyan-600 hover:to-cyan-500 text-white font-bold py-4 rounded-xl shadow-[0_0_20px_rgba(14,165,233,0.3)] hover:shadow-[0_0_30px_rgba(14,165,233,0.5)] transition-all transform hover:-translate-y-1 ${apiKeyStatus === 'missing' ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}
               >
                 <div className="flex items-center justify-center gap-2">
                   <span>솔루션 자동 실행</span>
@@ -649,6 +717,86 @@ const App: React.FC = () => {
               >
                 확인했습니다
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* API Key Modal */}
+      {showApiKeyModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onClick={() => setShowApiKeyModal(false)}></div>
+          <div className="relative w-full max-w-md bg-slate-900 border border-slate-700 rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300">
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-800/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-curang-primary/20 flex items-center justify-center">
+                  <Settings className="w-6 h-6 text-curang-primary" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Google API Key 설정</h2>
+                  <p className="text-xs text-slate-400">웹 배포 환경에서 AI 기능을 활성화하기 위해 API Key를 입력하세요</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowApiKeyModal(false)}
+                className="p-2 hover:bg-slate-700 rounded-full text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="p-8 space-y-6">
+              {apiKeyMessage && (
+                <div className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 animate-in slide-in-from-top-2 duration-300 ${
+                  apiKeyMessage.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                }`}>
+                  {apiKeyMessage.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                  {apiKeyMessage.text}
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-curang-primary uppercase tracking-wider">웹 배포 (Vercel / Cloudflare) 안내</h4>
+                    <span className="px-2 py-0.5 rounded-full bg-curang-primary/10 text-curang-primary text-[9px] font-black uppercase">Web Support</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Vercel이나 Cloudflare와 같은 외부 환경에 배포된 경우, Google AI Studio의 자동 키 선택 기능을 사용할 수 없습니다. 
+                    이 버튼을 통해 직접 API Key를 입력하면 배포된 사이트에서도 모든 기능을 정상적으로 이용할 수 있습니다.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-400">Gemini API Key</label>
+                  <input 
+                    type="password"
+                    value={customApiKey}
+                    onChange={(e) => setCustomApiKey(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-curang-primary outline-none transition-all"
+                    placeholder="AIZA..."
+                  />
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    * 입력하신 키는 브라우저의 <strong>로컬 스토리지(localStorage)</strong>에만 안전하게 저장되며 서버로 전송되지 않습니다.<br/>
+                    * 키가 없으시다면 <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-curang-primary hover:underline">Google AI Studio</a>에서 무료로 발급받을 수 있습니다.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={saveCustomApiKey}
+                  className="w-full py-3 bg-curang-primary hover:bg-curang-primary/80 text-white font-bold rounded-xl transition-all"
+                >
+                  저장하기
+                </button>
+                <button 
+                  onClick={clearCustomApiKey}
+                  className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 font-medium rounded-xl transition-all"
+                >
+                  저장된 키 삭제
+                </button>
+              </div>
             </div>
           </div>
         </div>
